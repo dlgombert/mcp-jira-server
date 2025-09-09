@@ -10,7 +10,14 @@ A comprehensive Model Context Protocol (MCP) server for Jira integration with Cl
 
 ## 🚀 Features
 
-### 📋 Issue Management (12 tools)
+### ✨ Recent Updates (2025)
+- **Enhanced API Compatibility** - Updated to use current Atlassian Cloud API best practices
+- **Improved Search** - Better handling of JQL queries and assigned issue search
+- **POST-based Search** - More reliable search operations using POST method instead of GET
+- **Enhanced Error Handling** - Better error messages with context for debugging
+- **New get-my-issues Tool** - Dedicated tool for retrieving user-assigned issues
+
+### 📋 Issue Management (13 tools)
 - **create-issue** - Create issues with full field support including custom fields and dates
 - **update-issue** - Update existing issues with smart field handling
 - **get-issue** - Retrieve detailed issue information
@@ -22,6 +29,7 @@ A comprehensive Model Context Protocol (MCP) server for Jira integration with Cl
 - **diagnose-fields** - Troubleshoot field configuration and find custom field IDs
 - **create-epic-with-subtasks** - Create epic with multiple subtasks in one operation
 - **create-task-for-epic** - Create task linked to epic (optimized for localized Jira)
+- **get-my-issues** - Get all issues assigned to the current user (optimized for 2025 API)
 
 ### 💬 Comments & History (3 tools)
 - **get-comments** - Read issue comments with author and timestamp information
@@ -194,11 +202,25 @@ Create task for epic PPC-48 with summary "Database backup"
 ### Searching Issues
 
 ```
+Find all my assigned issues
+```
+
+```
 Find all open bugs assigned to me
 ```
 
 ```
 Search for issues in project PROJ with label "urgent" that are not done
+```
+
+### Getting My Issues (New in 2025)
+
+```
+Show me all issues assigned to me
+```
+
+```
+Get my issues with a limit of 10 results
 ```
 
 ### Date-based Searching

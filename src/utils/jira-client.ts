@@ -79,15 +79,24 @@ export class JiraClient {
             if (contentType?.includes('application/json')) {
               errorDetails = await res.json();
               
-              if (errorDetails.errorMessages) {
+              if (errorDetails.errorMessages && Array.isArray(errorDetails.errorMessages)) {
                 errorMessage = errorDetails.errorMessages.join(', ');
-              } else if (errorDetails.errors) {
+              } else if (errorDetails.errors && typeof errorDetails.errors === 'object') {
                 const errors = Object.entries(errorDetails.errors)
                   .map(([k, v]) => `${k}: ${v}`)
                   .join(', ');
                 errorMessage = errors || errorMessage;
               } else if (errorDetails.message) {
                 errorMessage = errorDetails.message;
+              }
+              
+              // Add context for common API issues
+              if (res.status === 401) {
+                errorMessage += ' (Check your API token and permissions)';
+              } else if (res.status === 403) {
+                errorMessage += ' (Insufficient permissions - check Jira project access)';
+              } else if (res.status === 404 && endpoint.includes('/search')) {
+                errorMessage += ' (Search endpoint not found - may indicate API version mismatch)';
               }
             } else {
               // Try to read text response
@@ -99,6 +108,14 @@ export class JiraClient {
           } catch (parseError) {
             logger.warn('Failed to parse error response', parseError);
           }
+          
+          logger.error(`API Error: ${method} ${endpoint}`, {
+            status: res.status,
+            statusText: res.statusText,
+            errorDetails,
+            endpoint,
+            method
+          });
           
           const error = new Error(errorMessage);
           (error as any).status = res.status;
@@ -204,11 +221,54 @@ export class JiraClient {
 
   async searchIssues(jql: string, maxResults: number = 50): Promise<JiraApiResponse<JiraSearchResult>> {
     logger.info('Searching issues', { jql, maxResults });
+    
+    // Use the new /rest/api/3/search/jql endpoint as required by Atlassian
     const params = new URLSearchParams({
-      jql,
+      jql: jql, // Don't double-encode since URLSearchParams handles it
       maxResults: maxResults.toString()
     });
-    return this.request<JiraSearchResult>('GET', `/search?${params}`);
+    
+    // Add fields if needed
+    if (maxResults <= 100) { // Only add fields for smaller requests to avoid URL length issues
+      params.set('fields', 'summary,status,assignee,created,updated,priority,issuetype,project,key');
+    }
+    
+    logger.debug('Search/jql URL params', { jql, maxResults, url: `/search/jql?${params}` });
+    
+    try {
+      return await this.request<JiraSearchResult>('GET', `/search/jql?${params}`);
+    } catch (error) {
+      logger.info('GET search/jql failed, trying POST method');
+      // Fallback to POST if GET fails (for complex queries)
+      const payload = {
+        jql: jql,
+        maxResults: maxResults,
+        fields: [
+          'summary',
+          'status', 
+          'assignee',
+          'created',
+          'updated',
+          'priority',
+          'issuetype',
+          'project',
+          'key'
+        ]
+      };
+      
+      try {
+        return await this.request<JiraSearchResult>('POST', '/search/jql', payload);
+      } catch (error2) {
+        logger.error('Both GET and POST search/jql failed', { error, error2 });
+        throw error; // Return the original error
+      }
+    }
+  }
+
+  async getMyAssignedIssues(maxResults: number = 50): Promise<JiraApiResponse<JiraSearchResult>> {
+    logger.info('Getting issues assigned to current user', { maxResults });
+    const jql = 'assignee = currentUser() ORDER BY updated DESC';
+    return this.searchIssues(jql, maxResults);
   }
 
   async getLinkTypes(): Promise<JiraApiResponse<any[]>> {

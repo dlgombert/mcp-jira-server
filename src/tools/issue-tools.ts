@@ -58,6 +58,10 @@ const SearchIssuesSchema = z.object({
   maxResults: z.number().optional().default(20).describe('Maximum results to return')
 });
 
+const GetMyIssuesSchema = z.object({
+  maxResults: z.number().optional().default(20).describe('Maximum results to return')
+});
+
 const TransitionIssueSchema = z.object({
   issueKey: z.string().describe('Issue key (e.g., "PROJ-123")'),
   transitionName: z.string().describe('Name of transition (e.g., "In Progress", "Done")')
@@ -585,8 +589,17 @@ export function createIssueTools(client: JiraClient, config: Config): Record<str
           }
           
           if (params.assignee) {
-            const assigneeValue = params.assignee === 'currentUser' ? 'currentUser()' : `"${params.assignee}"`;
-            conditions.push(`assignee = ${assigneeValue}`);
+            if (params.assignee.toLowerCase() === 'currentuser' || params.assignee === 'currentUser') {
+              conditions.push('assignee = currentUser()');
+            } else {
+              // Handle both email addresses and account IDs
+              if (params.assignee.includes('@')) {
+                conditions.push(`assignee = "${params.assignee}"`);
+              } else {
+                // Assume it's an account ID
+                conditions.push(`assignee = "${params.assignee}"`);
+              }
+            }
           }
           
           if (params.status) {
@@ -2107,6 +2120,65 @@ ${endDate ? `🏁 End: ${endDate}` : ''}`
           };
         } catch (error) {
           logger.error('Error in batch-comment handler', error);
+          
+          if (error instanceof z.ZodError) {
+            const issues = error.issues.map(issue => `- ${issue.path.join('.')}: ${issue.message}`).join('\n');
+            return {
+              content: [{
+                type: 'text',
+                text: `❌ Invalid parameters:\n${issues}`
+              }]
+            };
+          }
+          
+          return {
+            content: [{
+              type: 'text',
+              text: `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+            }]
+          };
+        }
+      }
+    },
+
+    'get-my-issues': {
+      description: 'Get all issues assigned to the current user',
+      inputSchema: zodToJsonSchema(GetMyIssuesSchema) as any,
+      handler: async (args: unknown) => {
+        try {
+          const params = GetMyIssuesSchema.parse(args);
+          logger.debug('Getting my assigned issues', params);
+          
+          const result = await client.getMyAssignedIssues(params.maxResults);
+          
+          if (!result.success || !result.data) {
+            logger.error('Failed to get my issues', { error: result.error });
+            return {
+              content: [{
+                type: 'text',
+                text: `❌ Failed to get your assigned issues: ${result.error}`
+              }]
+            };
+          }
+
+          const searchResult = result.data;
+          if (!searchResult.issues || searchResult.issues.length === 0) {
+            return {
+              content: [{
+                type: 'text',
+                text: '📝 You have no issues currently assigned to you.'
+              }]
+            };
+          }
+
+          return {
+            content: [{
+              type: 'text',
+              text: JiraFormatter.formatSearchResults(searchResult)
+            }]
+          };
+        } catch (error) {
+          logger.error('Error in get-my-issues handler', error);
           
           if (error instanceof z.ZodError) {
             const issues = error.issues.map(issue => `- ${issue.path.join('.')}: ${issue.message}`).join('\n');
